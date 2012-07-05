@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script type="text/javascript" src="jquery.js"></script>
+<script type="text/javascript" src="sgl.js"></script>  
+
+
+<script id="shader-fs" type="x-shader/x-fragment">
+  precision highp float;
+
+  varying vec3 vPos;
+  uniform float zoom;
+  uniform float panX;
+  uniform float panY;
+
+  void main(void) {
+    float x = zoom*(vPos.x+panX);
+    float y = zoom*(vPos.y+panY);
+
+
+    gl_FragColor = x*x + y*y < 1.0 ? vec4(0.5,0.0,0.0,1.0) : vec4(1.0,1.0,1.0,1.0);
+  }
+
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+  attribute vec3 vertexPos;
+  varying vec3 vPos;
+
+  void main(void) {
+    gl_Position = vec4(vertexPos, 1.0);
+    vPos = vertexPos;
+  }
+</script>
+
+<script type="text/javascript">
+  jQuery(function () {
+    webGLStart();
+  });
+</script>
+</head>
+
+<body>
+
+<p>Keys: <strong>W A S D + -</strong></p>
+
+<canvas id="canvas" width="800" height="800"></canvas>
+
+</body>
+</html>

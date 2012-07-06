@@ -3,7 +3,7 @@
 <head>
 <script type="text/javascript" src="jquery.js"></script>
 <script type="text/javascript" src="sgl.js"></script>  
-
+<script type="text/javascript" src="test.js"></script>  
 
 <script id="shader-fs" type="x-shader/x-fragment">
   precision highp float;
@@ -16,7 +16,6 @@
   void main(void) {
     float x = zoom*(vPos.x+panX);
     float y = zoom*(vPos.y+panY);
-
 
     gl_FragColor = x*x + y*y < 1.0 ? vec4(0.5,0.0,0.0,1.0) : vec4(1.0,1.0,1.0,1.0);
   }
@@ -33,14 +32,9 @@
   }
 </script>
 
-<script type="text/javascript">
-  jQuery(function () {
-    webGLStart();
-  });
-</script>
 </head>
 
-<body>
+<body onload="webGLStart()">
 
 <p>Keys: <strong>W A S D + -</strong></p>
 

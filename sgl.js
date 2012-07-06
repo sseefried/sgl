@@ -1,12 +1,11 @@
-
-
-
 /*
- *
+ * 
  */
 var SGL = (function() {
 
-  /* The JavaScript version of the Either type in Haskell
+  /* 
+   * Function 'error' returns a value that signifies an erroneous conditon
+   * along with a descriptive message.
    *
    * Typical use case:
    *
@@ -14,16 +13,15 @@ var SGL = (function() {
    *  if (SGL.isError v) {
    *    ... do something ...
    *  } else {
-   *    ... v is correct value here
+   *    ... v is correct value here ...
    *  }
    */
-
   function error(msg) { return { error: true, msg: msg }}
   function isError(e) { return e && e.error };
 
-  /* An algebraic data type of of errors */
+  // SGLError: An algebraic data type of of errors
   var SGLError =
-    { noInit: "Could not initialise WebGL",
+    { noInit:            "Could not initialise WebGL",
       missingCanvas:     function(id) {
                            return "Could not find canvas with id \"" + id + "\"";},
       missingShader:     function(id) {
@@ -39,6 +37,10 @@ var SGL = (function() {
                           name + "\""; }
     }
 
+  //
+  // Initialises canvas and sets the viewport width and height to be equal to the
+  // width and height of the canvas DOM element.
+  //
   function initGL(canvasId) {
     var gl, canvas = document.getElementById(canvasId);
     try {
@@ -52,6 +54,13 @@ var SGL = (function() {
     return gl;
   }
 
+  // 
+  // @getShader(gl,id)@ tries to find either GLSL fragment or vertex shader at the
+  // DOM element with ID of @id@. 
+  //
+  // It attemps to compile the shader and returns an error (via function @error@)
+  // if it cannot.
+  //
   function getShader(gl, id) {
     var shaderScript = document.getElementById(id), shader, str = "", k, shaderSort;
 
@@ -86,10 +95,13 @@ var SGL = (function() {
     return shader;
   }
 
- /*
-  * attrRec should be { value: <Float32Array> }
-  * Adds fields "buffer" and "location" to @attrRec@ object.
-  */
+  //
+  // Sets up a new buffer for GLSL attribute @attrName@
+  //
+  // @attrRec@ should contain at least the field @value@.
+  // This function adds fields "buffer" and "location" to @attrRec@ object,
+  // for use later in the @drawFromBufferToAttribute@ function.
+  //
   function setUpAttributeBuffer(gl, shaderProgram, attrName, attrRec) {
     attrRec.buffer   = gl.createBuffer();
     attrRec.location = gl.getAttribLocation(shaderProgram, attrName);
@@ -99,8 +111,14 @@ var SGL = (function() {
   }
 
   //
-  // attribute should be attribute returned by gl.getAttribLocation
-  // attrRec should be { location: <loc>, buffer: <>, value: <value>, itemSize: <number>}
+  // Draws from an attribute buffer (set up with @setUpAttributeBuffer@)
+  // to the frame buffer.
+  // 
+  // * @gl@ is the WebGL context
+  // * @shaderProgram@ is the compile shader program
+  // * @attributes@ should contains records containing at least 
+  //   the following fields: value, itemSize, location, buffer
+  // * @i@ is the index of the active attributes
   //
   function drawFromBufferToAttribute(gl, shaderProgram, attributes, i) {
     attrInfo = gl.getActiveAttrib(shaderProgram, i);
@@ -121,6 +139,9 @@ var SGL = (function() {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, numItems);
   }
 
+  //
+  // Converts a WebGL type (of type GLEnum) to a human readable string.
+  //
   function typeToString(gl, type) {
     switch(type) {
       case      gl.FLOAT: return "float";
@@ -133,7 +154,10 @@ var SGL = (function() {
     }
   }
 
-  /* Works out the maximum "itemSize" for an attribute */
+  //
+  // Returns maximum "itemSize" for an attribute to be used in
+  // a call to @gl.vertexAttribPointer@.
+  //
   function maxItemSize(gl, type) {
     switch(type) {
       case      gl.FLOAT: return 1;
@@ -146,7 +170,12 @@ var SGL = (function() {
     }
   }
 
+  //
+  // Returns the function for writing a value to a GLSL uniform appropriate to
+  // the uniform's type.
+  //
   // Valid types for attributes are "float", "vec2", "vec3", "vec4", "mat2", "mat3" and "mat4"
+  //
   function uniformFun(gl, type) {
     var fun;
     switch(type) {
@@ -157,14 +186,17 @@ var SGL = (function() {
       case gl.FLOAT_MAT2: fun = "uniformMatrix2fv"; break;
       case gl.FLOAT_MAT3: fun = "uniformMatrix3fv"; break;
       case gl.FLOAT_MAT4: fun = "uniformMatrix4fv"; break;
-      default: fun = "uniform1fbroken"; break;
     }
     // Must wrap function otherwise you get "illegal invocation" error.
     return function(loc, value) { return gl[fun](loc, value); };
   }
 
-  /* For some reason WebGL just hates the (x,y) value (0.0, 0.0). We add a small error value
-     to prevent this problem */
+  //
+  // Creates a 2D mesh with @n@ squares in it (i.e. 2*n triangles) with corners 
+  // (-x, x), (x,x), (x, -x), (-x,-x) where x = @width@/2. It is centered at the origin.
+  //
+  // NOTE: For some reason WebGL just hates the (x,y) value (0.0, 0.0). We add a small error value
+  //       to prevent this problem
   function mesh2D(n,width) {
     var a = new Float32Array(2*(2*(n*(n+1))  + 2*(n-1)   ));
     var i, j, len = 0;
@@ -191,7 +223,11 @@ var SGL = (function() {
   }
 
   //
+  // @init@ initialises a canvas, compiles and links a fragement and vertex shader
+  // and returns a "drawScene" function which, given a hash of uniform values,
+  // writes those uniforms and displays the scene.
   //
+  // FIXME: Write more doco
   //
   function init(canvasId, fragmentShaderId, vertexShaderId, options) {
     var

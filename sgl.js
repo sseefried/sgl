@@ -1,3 +1,40 @@
+  function isArray(value) {
+    return value && typeof value === 'object' && value.constructor === Array;
+  }
+
+
+  //
+  // Invariant: Array should have at least 3 * itemSize elements
+  // Invariant: Array should have multiple of itemSize elements.
+  //
+  function foo(val, itemSize) {
+    var TRIANGLE_SIDES_MINUS_ONE = 2;
+    var ai, i, a = [], offset, i_offset, as, s=0, indices = [];
+    if (isArray(val)) {
+      if (val.length > 0 && isArray(val[0])) { // array of arrays
+        as = val;
+      } else { // flat array
+        as = [val];
+      }
+
+      for (s=0,i_offset=0,offset=0, ai = 0; ai < as.length; ai++) {
+        for (i=0; i < as[ai].length; i++,offset++) { // copy array exactly
+          a[offset] = as[ai][i];
+        }
+
+        for ( i=0
+            ; i < Math.ceil(as[ai].length / itemSize) - TRIANGLE_SIDES_MINUS_ONE
+            ; i++,i_offset+=itemSize,s++) {
+          indices[i_offset]   = s;
+          indices[i_offset+1] = s+1;
+          indices[i_offset+2] = s+2;
+        }
+        s += TRIANGLE_SIDES_MINUS_ONE;
+      }
+    }
+    return({ array: new Float32Array(a), indices: new Uint16Array(indices)});
+  }
+
 /*
  * 
  */
@@ -28,6 +65,7 @@ var SGL = (function() {
                            return "Could not find shader with id \"" + id + "\"";},
       unknownShaderType: function(s) {
                            return "Unknown shader type \"" + s + "\"" },
+      noAttribute: function(s) { return "No attribute in shader called \"" + s + "\""},
       shaderCompileFail: function(shaderSort, msg) {
                             return "Error in " + shaderSort + " shader\n" + msg; },
       shaderLinkFail:    function(msg) { return msg; },
@@ -99,15 +137,25 @@ var SGL = (function() {
   // Sets up a new buffer for GLSL attribute @attrName@
   //
   // @attrRec@ should contain at least the field @value@.
-  // This function adds fields "buffer" and "location" to @attrRec@ object,
+  // This function adds fields "buffer", "location" and "index_buffer" to @attrRec@ object,
   // for use later in the @drawFromBufferToAttribute@ function.
   //
   function setUpAttributeBuffer(gl, shaderProgram, attrName, attrRec) {
-    attrRec.buffer   = gl.createBuffer();
-    attrRec.location = gl.getAttribLocation(shaderProgram, attrName);
+    var i = 0, obj;
+    attrRec.location = gl.getAttribLocation(shaderProgram, attrName); 
+    obj = foo(attrRec.value, attrRec.itemSize);
+    if (attrRec.location < 0 ) { return error(SGLError.noAttribute(attrName)) }
     gl.enableVertexAttribArray(attrRec.location);
+
+    attrRec.buffer       = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, attrRec.buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, attrRec.value, gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, obj.array, gl.STATIC_DRAW);
+
+    attrRec.index_buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, attrRec.index_buffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, obj.indices, gl.STATIC_DRAW);
+
+    attrRec.numIndices = obj.indices.length;
   }
 
   //
@@ -116,27 +164,27 @@ var SGL = (function() {
   // 
   // * @gl@ is the WebGL context
   // * @shaderProgram@ is the compile shader program
-  // * @attributes@ should contains records containing at least 
+  // * @attributes@ should be a record containing at least 
   //   the following fields: value, itemSize, location, buffer
   // * @i@ is the index of the active attributes
   //
   function drawFromBufferToAttribute(gl, shaderProgram, attributes, i) {
     attrInfo = gl.getActiveAttrib(shaderProgram, i);
-    var attrRec = attributes[attrInfo.name], 
-        numItems = attrRec.value.length / attrRec.itemSize, attr,
-        maxAttrItemSize;
+    if (attributes[attrInfo.name]) {
+      var attrRec = attributes[attrInfo.name], 
+          numItems = attrRec.value.length / attrRec.itemSize, attr,
+          maxAttrItemSize;
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, attrRec.buffer);
-    maxAttrItemSize = maxItemSize(gl, attrInfo.type)
-    if (attrRec.itemSize <= 0) { return error(SGLError.itemSizeZero); }
-    if (attrRec.itemSize > maxAttrItemSize) {
-      return error(SGLError.itemSizeToLarge(attrRec.itemSize,
-                          typeToString(gl, attrInfo.type) + " " + attrInfo.name));
+      gl.bindBuffer(gl.ARRAY_BUFFER, attrRec.buffer);
+      maxAttrItemSize = maxItemSize(gl, attrInfo.type)
+      if (attrRec.itemSize <= 0) { return error(SGLError.itemSizeZero); }
+      if (attrRec.itemSize > maxAttrItemSize) {
+        return error(SGLError.itemSizeToLarge(attrRec.itemSize,
+                     typeToString(gl, attrInfo.type) + " " + attrInfo.name));
+      }
+      gl.vertexAttribPointer(attrRec.location, attrRec.itemSize, gl.FLOAT, false, 0, 0);
+      gl.drawElements(gl.TRIANGLE_STRIP, attrRec.numIndices, gl.UNSIGNED_SHORT,0);
     }
-
-
-    gl.vertexAttribPointer(attrRec.location, attrRec.itemSize, gl.FLOAT, false, 0, 0);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, numItems);
   }
 
   //
@@ -177,30 +225,49 @@ var SGL = (function() {
   // Valid types for attributes are "float", "vec2", "vec3", "vec4", "mat2", "mat3" and "mat4"
   //
   function uniformFun(gl, type) {
-    var fun;
+    var fun, isMatrixFun = false;
     switch(type) {
       case      gl.FLOAT: fun = "uniform1f";        break;
       case gl.FLOAT_VEC2: fun = "uniform2fv";       break;
       case gl.FLOAT_VEC3: fun = "uniform3fv";       break;
       case gl.FLOAT_VEC4: fun = "uniform4fv";       break;
-      case gl.FLOAT_MAT2: fun = "uniformMatrix2fv"; break;
-      case gl.FLOAT_MAT3: fun = "uniformMatrix3fv"; break;
-      case gl.FLOAT_MAT4: fun = "uniformMatrix4fv"; break;
+
+      case gl.FLOAT_MAT2:
+        fun = "uniformMatrix2fv";
+        isMatrixFun = true;
+        break;
+      case gl.FLOAT_MAT3:
+        fun = "uniformMatrix3fv";
+        isMatrixFun = true;
+        break;
+      case gl.FLOAT_MAT4:
+        fun = "uniformMatrix4fv";
+        isMatrixFun = true;
+        break;
     }
     // Must wrap function otherwise you get "illegal invocation" error.
-    return function(loc, value) { return gl[fun](loc, value); };
+    return function(loc, value) {
+      if (isMatrixFun) {
+        return gl[fun](loc, false, value);
+      } else {
+        return gl[fun](loc, value);
+      }
+    };
+
   }
 
   //
   // Creates a 2D mesh with @n@ squares in it (i.e. 2*n triangles) with corners 
-  // (-x, x), (x,x), (x, -x), (-x,-x) where x = @width@/2. It is centered at the origin.
+  // (-n, n), (n,n), (n, -n), (-n,-n) where n = @width@/2. It is centered at the origin.
   //
-  // NOTE: For some reason WebGL just hates the (x,y) value (0.0, 0.0). We add a small error value
-  //       to prevent this problem
+  // The mesh is suitable for drawing with WebGL's 'drawArrays' function, 
+  // with method 'TRIANGLE_STRIP'. It uses "degenerate triangles" at the end of each row
+  // to make this work.
+  //
   function mesh2D(n,width) {
     var a = new Float32Array(2*(2*(n*(n+1))  + 2*(n-1)   ));
     var i, j, len = 0;
-    var delta = width / n + 0.000000000000001;
+    var delta = width / n; 
 
     var x, y = -(width/2.0);
     for (j = 0; j < n; j++, y+=delta) {
@@ -261,7 +328,8 @@ var SGL = (function() {
 
     for (attrName in attributes) {
       if (attributes.hasOwnProperty(attrName)) {
-        setUpAttributeBuffer(gl, shaderProgram, attrName, attributes[attrName]);
+        mbErr = setUpAttributeBuffer(gl, shaderProgram, attrName, attributes[attrName]);
+        if (isError(mbErr)) { return mbErr; }
       }
     }
 
@@ -280,7 +348,9 @@ var SGL = (function() {
       for (i=0; i < gl.getProgramParameter(shaderProgram,gl.ACTIVE_UNIFORMS); i++) {
         uniformInfo = gl.getActiveUniform(shaderProgram, i)
         loc = gl.getUniformLocation(shaderProgram, uniformInfo.name);
-        uniformFun(gl, uniformInfo.type)(loc, uniforms[uniformInfo.name] || 0.0); // default to zero
+        if (uniforms[uniformInfo.name]) {
+          uniformFun(gl, uniformInfo.type)(loc, uniforms[uniformInfo.name]); // default to zero
+        }
       }
 
       // Now draw!

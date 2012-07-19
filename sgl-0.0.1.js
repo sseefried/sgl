@@ -1,22 +1,107 @@
 
-/*
- * Simple GL library
- */
+//
+// Module: Simple GL 
+// Author: Sean Seefried
+//         Copyright 2012
+//
+//
+// Function @mesh2D@
+// ~~~~~~~~~~~~~~~~~
+//  
+// Creates a 2D mesh with @n@ squares in it (i.e. 2*n triangles) with corners 
+// (-n, n), (n,n), (n, -n), (-n,-n) where n = @width@/2. It is centered at the origin.
+//
+// The mesh is suitable for drawing with WebGL's 'drawArrays' function, 
+// with method 'TRIANGLE_STRIP'. It uses "degenerate triangles" at the end of each row
+// to make this work.
+//
+//
+//
+// Function @init@
+// ~~~~~~~~~~~~~~~
+//
+//   @init@ initialises a canvas, compiles and links a fragement and vertex shader
+//   and returns a "drawScene" function which, given a hash of uniform values,
+//   writes those uniforms and displays the scene.
+//
+//   @options@
+//   ---------
+//
+//   The @options@ variable is a record. Acceptions options are:
+//   - clearColor: <color array of length 4. RGBA. Colour value in interval [0.0, 1.0] >  
+//   - attributes: <attributes object>
+//
+//   The attributes object is of the form { <attribute name>: <attribute specificaiton, ... } 
+//   <attribute name> must be defined as an attribute in the vertex shader.
+//
+//   An <attribute specification> is a record of form { value: <array>, itemSize: <integer> }
+//   @itemSize@ is the number of numbers that define each vertex (usually 2 or 3).
+//
+//   The <array> can either be a primitive array of an array of primitive arrays. 
+//   Each primitive array must contain only numbers which represent vertex positions to be
+//   drawn as a triangle strip. This means that for array [v0,v1,v2...] triangles are drawn as
+//   follows: (v0,v1,v2), (v1,v2,v3), (v2,v3,v4), ... 
+//  
+//   Each primitive array must have at least 3 elements (so at least one triangle can be drawn)
+//   and must be a multiple of @itemSize@.
+//
+//   @itemSize@ must be less than or equal to the number of elements in the corresponding
+//   attribute of the vertex shader. e.g. @itemSize = 2@ will be suitable for an attribute of
+//   'vec2' or 'vec3', whereas @itemSize = 3@ will only be suitable for an attribute of
+//   type 'vec3'.
+// 
+//   The "drawScene" function
+//   ------------------------
+//
+//   The function returned by @init@ takes a hash of uniform specifications. The hash is of the
+//   form { <uniform name>: <uniform value>, ...}
+//
+//   A GLSL uniform with name <uniform name> should exist in either the vertex or fragment shader.
+//   If it does not, nothing happens.
+// 
+//   Each uniform value must be appropriate for the GLSL uniform. 
+//   GLSL type  | JavaScript type
+//   -----------+-----------------
+//   float      | Number
+//   int        | Number
+//   ivec2/vec2 | Array of numbers, length = 2.
+//   ivec3/vec3 | Array of numbers, length = 3.
+//   ivec4/vec4 | Array of numbers, length = 4.
+//   mat3       | Array of numbers, length = 9.
+//   mat4       | Array of numbers, length = 16.
+//
+// Function @isError@
+// ~~~~~~~~~~~~~~~~~~
+//   Function @init@ can return an erroneous value. @isError@ returns @true@ if this is
+//   the case. The erroneous value has an attribute @msg@ containing a string that explains
+//   what went wrong.
+// 
+//   Example usage:
+//   
+//   drawScene = SGL.init("canvas", "fragShader", "verteShader", {});
+//   if (SGL.isError(drawScene)) {
+//     alert(drawScene.msg);
+//   }
+
+//
+// SGL is defined as a "module" using Douglas Crockford's trick of invoking
+// an anonymous zero-argument function. It returns an object containing
+// the exported "methods" of the "module".
+//  
 var SGL = (function() {
 
-  /* 
-   * Function 'error' returns a value that signifies an erroneous conditon
-   * along with a descriptive message.
-   *
-   * Typical use case:
-   *
-   *  v = someFun(someParams...);
-   *  if (SGL.isError v) {
-   *    ... do something ...
-   *  } else {
-   *    ... v is correct value here ...
-   *  }
-   */
+  // Function 'error' returns a value that signifies an erroneous conditon
+  // along with a descriptive message.
+  //
+  // Typical use case:
+  //
+  //  v = someFun(someParams...);
+  //  if (SGL.isError v) {
+  //    ... do something ...
+  //  } else {
+  //    ... v is correct value here ...
+  //  }
+  //
   function error(msg) { return { error: true, msg: msg }}
   function isError(e) { return e && e.error };
 
@@ -297,14 +382,6 @@ var SGL = (function() {
 
   }
 
-  //
-  // Creates a 2D mesh with @n@ squares in it (i.e. 2*n triangles) with corners 
-  // (-n, n), (n,n), (n, -n), (-n,-n) where n = @width@/2. It is centered at the origin.
-  //
-  // The mesh is suitable for drawing with WebGL's 'drawArrays' function, 
-  // with method 'TRIANGLE_STRIP'. It uses "degenerate triangles" at the end of each row
-  // to make this work.
-  //
   function mesh2D(n,width) {
     var a = new Float32Array(2*(2*(n*(n+1))  + 2*(n-1)   ));
     var i, j, len = 0;
@@ -331,55 +408,7 @@ var SGL = (function() {
   }
 
   //
-  // @init@ initialises a canvas, compiles and links a fragement and vertex shader
-  // and returns a "drawScene" function which, given a hash of uniform values,
-  // writes those uniforms and displays the scene.
-  //
-  // @options@
-  // ---------
-  //
-  // The @options@ variable is a record. Acceptions options are:
-  // - clearColor: <color array of length 4. RGBA. Colour value in interval [0.0, 1.0] >  
-  // - attributes: <attributes object>
-  //
-  // The attributes object is of the form { <attribute name>: <attribute specificaiton, ... } 
-  // <attribute name> must be defined as an attribute in the vertex shader.
-  //
-  // An <attribute specification> is a record of form { value: <array>, itemSize: <integer> }
-  // @itemSize@ is the number of numbers that define each vertex (usually 2 or 3).
-  //
-  // The <array> can either be a primitive array of an array of primitive arrays. 
-  // Each primitive array must contain only numbers which represent vertex positions to be
-  // drawn as a triangle strip. This means that for array [v0,v1,v2...] triangles are drawn as
-  // follows: (v0,v1,v2), (v1,v2,v3), (v2,v3,v4), ... 
-  //
-  // Each primitive array must have at least 3 elements (so at least one triangle can be drawn)
-  // and must be a multiple of @itemSize@.
-  //
-  // @itemSize@ must be less than or equal to the number of elements in the corresponding
-  // attribute of the vertex shader. e.g. @itemSize = 2@ will be suitable for an attribute of
-  // 'vec2' or 'vec3', whereas @itemSize = 3@ will only be suitable for an attribute of
-  // type 'vec3'.
-  // 
-  // The "drawScene" function
-  // ------------------------
-  //
-  // The function returned by @init@ takes a hash of uniform specifications. The hash is of the
-  // form { <uniform name>: <uniform value>, ...}
-  //
-  // A GLSL uniform with name <uniform name> should exist in either the vertex or fragment shader.
-  // If it does not, nothing happens.
-  // 
-  // Each uniform value must be appropriate for the GLSL uniform. 
-  // GLSL type  | JavaScript type
-  // -----------+-----------------
-  // float      | Number
-  // int        | Number
-  // ivec2/vec2 | Array of numbers, length = 2.
-  // ivec3/vec3 | Array of numbers, length = 3.
-  // ivec4/vec4 | Array of numbers, length = 4.
-  // mat3       | Array of numbers, length = 9.
-  // mat4       | Array of numbers, length = 16.
+  // See documentation at head of file
   //
   function init(canvasId, fragmentShaderId, vertexShaderId, options) {
     var
@@ -451,7 +480,6 @@ var SGL = (function() {
   // Returns "methods" of this "module"
   return({ init: init,
            mesh2D: mesh2D,
-           error: error,
            isError: isError });
 
 })();

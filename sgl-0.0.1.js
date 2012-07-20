@@ -21,14 +21,27 @@
 // ~~~~~~~~~~~~~~~
 //
 //   @init@ initialises a canvas, compiles and links a fragement and vertex shader
-//   and returns a "drawScene" function which, given a hash of uniform values,
-//   writes those uniforms and displays the scene.
+//   and returns an "SGL context".  The SGL context is an object of form:
+//     { gl: ..., 
+//       drawScene: ...,
+//       shaderProgram: ...,
+//       attributeData: ... }
+//
+//   Field "drawScene" is a function used to draw the scene. (See "The drawScene function" below.)
+//   The other field are described below. They are really only used by the @cleanUp@ function.
+//
+//   - gl.               WebGL Context
+//   - shaderProgram.    The associated shader program -- contains refereces to 
+//                       compiled, and linked vertext/fragment shaders.
+//   - attributeData.    Data on GLSL attribute buffers/locations.
+//   
 //
 //   @options@
 //   ---------
 //
 //   The @options@ variable is a record. Acceptions options are:
 //   - clearColor: <color array of length 4. RGBA. Colour value in interval [0.0, 1.0] >  
+//     Default: Opaque white.
 //   - attributes: <attributes object>
 //
 //   The attributes object is of the form { <attribute name>: <attribute specificaiton, ... } 
@@ -50,11 +63,13 @@
 //   'vec2' or 'vec3', whereas @itemSize = 3@ will only be suitable for an attribute of
 //   type 'vec3'.
 // 
-//   The "drawScene" function
+//   The drawScene function
 //   ------------------------
 //
-//   The function returned by @init@ takes a hash of uniform specifications. The hash is of the
-//   form { <uniform name>: <uniform value>, ...}
+//   The drawScene function takes a single argument: a hash of uniform specifications. 
+//   It writes those uniforms to the shader program and displays the scene in the canvas.
+//
+//   The hash is of the form { <uniform name>: <uniform value>, ...}
 //
 //   A GLSL uniform with name <uniform name> should exist in either the vertex or fragment shader.
 //   If it does not, nothing happens.
@@ -64,11 +79,17 @@
 //   -----------+-----------------
 //   float      | Number
 //   int        | Number
-//   ivec2/vec2 | Array of numbers, length = 2.
-//   ivec3/vec3 | Array of numbers, length = 3.
-//   ivec4/vec4 | Array of numbers, length = 4.
-//   mat3       | Array of numbers, length = 9.
-//   mat4       | Array of numbers, length = 16.
+//   ivec2/vec2 | Array of numbers, length = 2
+//   ivec3/vec3 | Array of numbers, length = 3
+//   ivec4/vec4 | Array of numbers, length = 4
+//   mat3       | Array of numbers, length = 9
+//   mat4       | Array of numbers, length = 16
+//
+// Function @cleanUp@
+// ------------------
+//
+//   Takes the SGL context returned by function @init@ and cleans up the resources.
+//   It unlinks the shader programs, deletes buffers and cleans up vertex attribute arrays.
 //
 // Function @isError@
 // ~~~~~~~~~~~~~~~~~~
@@ -78,7 +99,7 @@
 // 
 //   Example usage:
 //   
-//   drawScene = SGL.init("canvas", "fragShader", "verteShader", {});
+//   drawScene = SGL.init("canvas", "fragShader", "vertexShader", {});
 //   if (SGL.isError(drawScene)) {
 //     alert(drawScene.msg);
 //   }
@@ -140,7 +161,7 @@ var SGL = (function() {
 
 
   //
-  // Function 'flattendArray' takes either an array or an array of arrays.
+  // Function 'flattenedArray' takes either an array or an array of arrays.
   // It returns a flattened array and an index array. The index array
   // contains offsets that represent vertex indexes.
   // 'offset' refers to the vertex defined at 'array[itemSize*offset]'
@@ -407,6 +428,34 @@ var SGL = (function() {
     return a;
   }
 
+
+  //
+  // { gl:... , drawScene:..., shaderProgram:... , attributeData:... }
+  //
+
+  //
+  // See documentation at head of file.
+  //
+  function cleanUp(sglContext) {
+    var i, shaders, gl = sglContext.gl; 
+    if (gl === undefined || sglContext.shaderProgram === undefined) { return; }
+
+    shaders = gl.getAttachedShaders(sglContext.shaderProgram);
+
+    for (i in shaders) { 
+      gl.detachShader(sglContext.shaderProgram, shaders[i]);
+      gl.deleteShader(shaders[i]);
+    }
+
+    for (i in sglContext.attributeData) {
+      gl.deleteBuffer(sglContext.attributeData[i].buffer);
+      gl.disableVertexAttribArray(sglContext.attributeData[i].location);
+    }
+
+    gl.deleteProgram(sglContext.shaderProgram);
+  }
+
+
   //
   // See documentation at head of file
   //
@@ -419,6 +468,7 @@ var SGL = (function() {
       attributes = options.attributes || [],
       loc,
       mbErr, // mbErr = "maybe error"
+      sglContext = {}, // return value of this function
       shaderProgram;
 
     gl = initGL(canvasId);
@@ -453,6 +503,7 @@ var SGL = (function() {
       gl.clearColor(1.0,1.0,1.0,1.0); // opaque white
     }
 
+    // This function is returned so that one can draw the scene.
     function drawScene(uniforms) {
       var uniformInfo, loc;
 
@@ -463,7 +514,7 @@ var SGL = (function() {
         uniformInfo = gl.getActiveUniform(shaderProgram, i)
         loc = gl.getUniformLocation(shaderProgram, uniformInfo.name);
         if (uniforms[uniformInfo.name]) {
-          uniformFun(gl, uniformInfo.type)(loc, uniforms[uniformInfo.name]); // default to zero
+          uniformFun(gl, uniformInfo.type)(loc, uniforms[uniformInfo.name]);
         }
       }
 
@@ -474,12 +525,22 @@ var SGL = (function() {
       }
     }
 
-    return drawScene;
+    // Set up the return value.
+    sglContext = { gl: gl, drawScene: drawScene, shaderProgram: shaderProgram,
+                  attributeData: [] };
+
+    for (i in attributes) {
+      sglContext.attributeData.push({ buffer:   attributes[i].buffer,
+                                      location: attributes[i].location});
+    }
+
+    return(sglContext);
   }
 
   // Returns "methods" of this "module"
   return({ init: init,
            mesh2D: mesh2D,
-           isError: isError });
+           isError: isError,
+           cleanUp: cleanUp });
 
 })();

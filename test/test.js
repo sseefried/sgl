@@ -41,7 +41,7 @@ function webGLStart() {
       ],
       pMatrix  = mat4.create(),
       mvMatrix = mat4.create(), // perspective and model-view matrix
-      uniforms, drawScene;
+      uniforms, sglContext;
 
   // Set up matrices. mat4 object comes from glMatrix library
   mat4.perspective(45, canvas.width()/canvas.height(), 0.1, 100.0, pMatrix);
@@ -53,13 +53,13 @@ function webGLStart() {
   mat4.rotate(mvMatrix, Math.PI/4, [0,0,1]);
   mat4.rotate(mvMatrix, Math.PI/4, [0,1,0]);
 
-  drawScene = SGL.init("canvas", "shader-fs", "shader-vs",
+  sglContext = SGL.init("canvas", "shader-fs", "shader-vs",
                       { clearColor: [ 0.0, 0.0, 0.0, 1.0 ],
                         attributes: { vertexPos: { value: cube_faces, itemSize: 3 } }
                       });
 
-  if (SGL.isError(drawScene)) {
-    alert(drawScene.msg);
+  if (SGL.isError(sglContext)) {
+    alert(sglContext.msg);
     return;
   }
 
@@ -67,9 +67,10 @@ function webGLStart() {
 
   var drawSceneWrapper = function(uniforms) {
     var mbErr;
-    mbErr = drawScene(uniforms);
+    mbErr = sglContext.drawScene(uniforms);
     if (SGL.isError(mbErr)) { alert(mbErr.msg); }
   }
 
   drawSceneWrapper(uniforms);
+  SGL.cleanUp(sglContext);
 }

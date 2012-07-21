@@ -1,17 +1,17 @@
 
 //
-// Module: Simple GL 
+// Module: Simple GL
 // Author: Sean Seefried
 //         Copyright 2012
 //
 //
 // Function @mesh2D@
 // ~~~~~~~~~~~~~~~~~
-//  
-// Creates a 2D mesh with @n@ squares in it (i.e. 2*n triangles) with corners 
+//
+// Creates a 2D mesh with @n@ squares in it (i.e. 2*n triangles) with corners
 // (-n, n), (n,n), (n, -n), (-n,-n) where n = @width@/2. It is centered at the origin.
 //
-// The mesh is suitable for drawing with WebGL's 'drawArrays' function, 
+// The mesh is suitable for drawing with WebGL's 'drawArrays' function,
 // with method 'TRIANGLE_STRIP'. It uses "degenerate triangles" at the end of each row
 // to make this work.
 //
@@ -20,9 +20,12 @@
 // Function @init@
 // ~~~~~~~~~~~~~~~
 //
+//   Usage: init(canvasId, fragmentShaderId, vertexShaderId, options)
+//
+//
 //   @init@ initialises a canvas, compiles and links a fragement and vertex shader
 //   and returns an "SGL context".  The SGL context is an object of form:
-//     { gl: ..., 
+//     { gl: ...,
 //       drawScene: ...,
 //       shaderProgram: ...,
 //       attributeData: ... }
@@ -31,30 +34,30 @@
 //   The other field are described below. They are really only used by the @cleanUp@ function.
 //
 //   - gl.               WebGL Context
-//   - shaderProgram.    The associated shader program -- contains refereces to 
+//   - shaderProgram.    The associated shader program -- contains refereces to
 //                       compiled, and linked vertext/fragment shaders.
 //   - attributeData.    Data on GLSL attribute buffers/locations.
-//   
 //
-//   @options@
-//   ---------
+//
+//   The @options@ parameter
+//   -----------------------
 //
 //   The @options@ variable is a record. Acceptions options are:
-//   - clearColor: <color array of length 4. RGBA. Colour value in interval [0.0, 1.0] >  
+//   - clearColor: <color array of length 4. RGBA. Colour value in interval [0.0, 1.0] >
 //     Default: Opaque white.
 //   - attributes: <attributes object>
 //
-//   The attributes object is of the form { <attribute name>: <attribute specificaiton, ... } 
+//   The attributes object is of the form { <attribute name>: <attribute specificaiton, ... }
 //   <attribute name> must be defined as an attribute in the vertex shader.
 //
 //   An <attribute specification> is a record of form { value: <array>, itemSize: <integer> }
 //   @itemSize@ is the number of numbers that define each vertex (usually 2 or 3).
 //
-//   The <array> can either be a primitive array of an array of primitive arrays. 
+//   The <array> can either be a primitive array of an array of primitive arrays.
 //   Each primitive array must contain only numbers which represent vertex positions to be
 //   drawn as a triangle strip. This means that for array [v0,v1,v2...] triangles are drawn as
-//   follows: (v0,v1,v2), (v1,v2,v3), (v2,v3,v4), ... 
-//  
+//   follows: (v0,v1,v2), (v1,v2,v3), (v2,v3,v4), ...
+//
 //   Each primitive array must have at least 3 elements (so at least one triangle can be drawn)
 //   and must be a multiple of @itemSize@.
 //
@@ -62,19 +65,19 @@
 //   attribute of the vertex shader. e.g. @itemSize = 2@ will be suitable for an attribute of
 //   'vec2' or 'vec3', whereas @itemSize = 3@ will only be suitable for an attribute of
 //   type 'vec3'.
-// 
+//
 //   The drawScene function
 //   ------------------------
 //
-//   The drawScene function takes a single argument: a hash of uniform specifications. 
+//   The drawScene function takes a single argument: a hash of uniform specifications.
 //   It writes those uniforms to the shader program and displays the scene in the canvas.
 //
 //   The hash is of the form { <uniform name>: <uniform value>, ...}
 //
 //   A GLSL uniform with name <uniform name> should exist in either the vertex or fragment shader.
 //   If it does not, nothing happens.
-// 
-//   Each uniform value must be appropriate for the GLSL uniform. 
+//
+//   Each uniform value must be appropriate for the GLSL uniform.
 //   GLSL type  | JavaScript type
 //   -----------+-----------------
 //   float      | Number
@@ -96,9 +99,9 @@
 //   Function @init@ can return an erroneous value. @isError@ returns @true@ if this is
 //   the case. The erroneous value has an attribute @msg@ containing a string that explains
 //   what went wrong.
-// 
+//
 //   Example usage:
-//   
+//
 //   drawScene = SGL.init("canvas", "fragShader", "vertexShader", {});
 //   if (SGL.isError(drawScene)) {
 //     alert(drawScene.msg);
@@ -108,7 +111,7 @@
 // SGL is defined as a "module" using Douglas Crockford's trick of invoking
 // an anonymous zero-argument function. It returns an object containing
 // the exported "methods" of the "module".
-//  
+//
 var SGL = (function() {
 
   // Function 'error' returns a value that signifies an erroneous conditon
@@ -147,61 +150,54 @@ var SGL = (function() {
                                   return("Array length = " + arrayLen + " is not a multiple of " +
                                          "itemSize = " + itemSize);
                                  },
-      lessThanThreeVertices: function(arrayLen, itemSize) {
-                               return("Array length = " + arrayLen + " should specify at least " +
-                                      "three vertices. Since itemSize = " + itemSize + " this "+
-                                      "should be at least 3*" + itemSize + " = " + 3*itemSize +
-                                      " elements");
-                             }
     }
 
   function isArray(value) {
-    return value && typeof value === 'object' && value.constructor === Array;
+    return value && typeof value === 'object' &&
+    (value.constructor === Array || value.constructor === Float32Array);
   }
 
 
   //
-  // Function 'flattenedArray' takes either an array or an array of arrays.
-  // It returns a flattened array and an index array. The index array
-  // contains offsets that represent vertex indexes.
-  // 'offset' refers to the vertex defined at 'array[itemSize*offset]'
+  // @val@ is either a vertex array or array of vertex arrays.
+  // Function @flattenedArray@ returns an object of the form { array: ..., offsets: ...}
   //
-  // Invariant: Array should have at least 3 * itemSize elements.
-  // (3 = number of vertices in triangle)
-  // Invariant: Array should have multiple of itemSize elements.
+  // Each offset object is of the form { offset:... , length:...}
+  // These values are used by gl.drawArrays to draw triangle strips.
+  //
+  // For array [a0, a1, ..., an]
+  // we get [ { offset: 0,                   length: <a0.length/itemSize> },
+  //          { offset: <a0.length/itemSize, length: <a1.length/itemSize> },
+  //           ...,
+  //          { offset <(sum of a0.length .. a{n-1}.length) / itemSize,
+  //            length: <an.length/itemSize> }
+  //        ]
   //
   function flattenedArray(val, itemSize) {
-    var TRIANGLE_SIDES_MINUS_ONE = 2;
-    var ai, i, a = [], offset, i_offset, as, s, indices = [];
+    var TRIANGLE_SIDES_MINUS_ONE = 2,
+        TRIANGLE_SIDES = 3;
+    var ai, i, a = [], index, offsets = [];
     if (isArray(val)) {
+
       if (val.length > 0 && isArray(val[0])) { // array of arrays
         as = val;
       } else { // flat array
         as = [val];
       }
 
-      for (s=0,i_offset=0,offset=0, ai = 0; ai < as.length; ai++) {
+      for (index=0, ai=0; ai < as.length; ai++) {
         if (as[ai].length % itemSize != 0) {
           return error(SGLError.arrayNotMutipleOfItemSize(as[ai].length, itemSize));
         }
-        if (as[ai].length / itemSize < 3) {
-          return error(SGLError.lessThanThreeVertices(as[ai].length, itemSize));
-        }
-        for (i=0; i < as[ai].length; i++,offset++) { // copy array exactly
-          a[offset] = as[ai][i];
+        for (i=0; i<as[ai].length; i++) {
+          a[index+i] = as[ai][i];
         }
 
-        for ( i=0
-            ; i < as[ai].length / itemSize - TRIANGLE_SIDES_MINUS_ONE
-            ; i++,i_offset+=itemSize,s++) {
-          indices[i_offset]   = s;
-          indices[i_offset+1] = s+1;
-          indices[i_offset+2] = s+2;
-        }
-        s += TRIANGLE_SIDES_MINUS_ONE;
+        offsets[ai] = { offset: index / itemSize , length: as[ai].length / itemSize };
+        index += as[ai].length
       }
     }
-    return({ array: new Float32Array(a), indices: new Uint16Array(indices)});
+    return({ array: new Float32Array(a), offsets: offsets});
   }
 
   //
@@ -238,9 +234,9 @@ var SGL = (function() {
     return gl;
   }
 
-  // 
+  //
   // @getShader(gl,id)@ tries to find either GLSL fragment or vertex shader at the
-  // DOM element with ID of @id@. 
+  // DOM element with ID of @id@.
   //
   // It attemps to compile the shader and returns an error (via function @error@)
   // if it cannot.
@@ -283,12 +279,12 @@ var SGL = (function() {
   // Sets up a new buffer for GLSL attribute @attrName@
   //
   // @attrRec@ should contain at least the field @value@.
-  // This function adds fields "buffer", "location" and "index_buffer" to @attrRec@ object,
+  // This function adds fields "buffer", "location" and "offsets" to @attrRec@ object,
   // for use later in the @drawFromBufferToAttribute@ function.
   //
   function setUpAttributeBuffer(gl, shaderProgram, attrName, attrRec) {
     var i = 0, obj;
-    attrRec.location = gl.getAttribLocation(shaderProgram, attrName); 
+    attrRec.location = gl.getAttribLocation(shaderProgram, attrName);
     obj = flattenedArray(attrRec.value, attrRec.itemSize);
     if (isError(obj)) { return obj;}
     if (attrRec.location < 0 ) { return error(SGLError.noAttribute(attrName)) }
@@ -297,31 +293,26 @@ var SGL = (function() {
     attrRec.buffer       = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, attrRec.buffer);
     gl.bufferData(gl.ARRAY_BUFFER, obj.array, gl.STATIC_DRAW);
+    gl.vertexAttribPointer(attrRec.location, attrRec.itemSize, gl.FLOAT, false, 0, 0);
 
-    attrRec.index_buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, attrRec.index_buffer);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, obj.indices, gl.STATIC_DRAW);
-
-    attrRec.numIndices = obj.indices.length;
+    attrRec.offsets = obj.offsets;
   }
 
   //
   // Draws from an attribute buffer (set up with @setUpAttributeBuffer@)
   // to the frame buffer.
-  // 
+  //
   // * @gl@ is the WebGL context
   // * @shaderProgram@ is the compile shader program
-  // * @attributes@ should be a record containing at least 
+  // * @attributes@ should be a record containing at least
   //   the following fields: value, itemSize, location, buffer
   // * @i@ is the index of the active attributes
   //
   function drawFromBufferToAttribute(gl, shaderProgram, attributes, i) {
+    var i, attrRec, attrInfo;
     attrInfo = gl.getActiveAttrib(shaderProgram, i);
     if (attributes[attrInfo.name]) {
-      var attrRec = attributes[attrInfo.name], 
-          numItems = attrRec.value.length / attrRec.itemSize, attr,
-          maxAttrItemSize;
-
+      attrRec = attributes[attrInfo.name];
       gl.bindBuffer(gl.ARRAY_BUFFER, attrRec.buffer);
       maxAttrItemSize = maxItemSize(gl, attrInfo.type)
       if (attrRec.itemSize <= 0) { return error(SGLError.itemSizeZero); }
@@ -329,8 +320,15 @@ var SGL = (function() {
         return error(SGLError.itemSizeToLarge(attrRec.itemSize,
                      typeToString(gl, attrInfo.type) + " " + attrInfo.name));
       }
-      gl.vertexAttribPointer(attrRec.location, attrRec.itemSize, gl.FLOAT, false, 0, 0);
-      gl.drawElements(gl.TRIANGLE_STRIP, attrRec.numIndices, gl.UNSIGNED_SHORT,0);
+
+      //
+      // FIXME: This is not that efficient. See if there is a way to use gl.drawElements to
+      // make this work.
+      //
+      for (i=0; i < attrRec.offsets.length; i++) {
+        gl.drawArrays(gl.TRIANGLE_STRIP, attrRec.offsets[i].offset,
+                      attrRec.offsets[i].length);
+      }
     }
   }
 
@@ -406,7 +404,7 @@ var SGL = (function() {
   function mesh2D(n,width) {
     var a = new Float32Array(2*(2*(n*(n+1))  + 2*(n-1)   ));
     var i, j, len = 0;
-    var delta = width / n; 
+    var delta = width / n  + 0.000000000000001;
 
     var x, y = -(width/2.0);
     for (j = 0; j < n; j++, y+=delta) {
@@ -437,12 +435,12 @@ var SGL = (function() {
   // See documentation at head of file.
   //
   function cleanUp(sglContext) {
-    var i, shaders, gl = sglContext.gl; 
+    var i, shaders, gl = sglContext.gl;
     if (gl === undefined || sglContext.shaderProgram === undefined) { return; }
 
     shaders = gl.getAttachedShaders(sglContext.shaderProgram);
 
-    for (i in shaders) { 
+    for (i in shaders) {
       gl.detachShader(sglContext.shaderProgram, shaders[i]);
       gl.deleteShader(shaders[i]);
     }
@@ -454,7 +452,6 @@ var SGL = (function() {
 
     gl.deleteProgram(sglContext.shaderProgram);
   }
-
 
   //
   // See documentation at head of file
@@ -502,6 +499,8 @@ var SGL = (function() {
     } else {
       gl.clearColor(1.0,1.0,1.0,1.0); // opaque white
     }
+
+    gl.enable(gl.DEPTH_TEST); // Very strange things happen if this is not enabled.
 
     // This function is returned so that one can draw the scene.
     function drawScene(uniforms) {

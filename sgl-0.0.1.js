@@ -150,6 +150,12 @@ var SGL = (function() {
                                   return("Array length = " + arrayLen + " is not a multiple of " +
                                          "itemSize = " + itemSize);
                                  },
+      lessThanThreeVertices: function(arrayLen, itemSize) {
+                               return("Array length = " + arrayLen + " should specify at least " +
+                                      "three vertices. Since itemSize = " + itemSize + " this "+
+                                      "should be at least 3*" + itemSize + " = " + 3*itemSize +
+                                      " elements");
+                             }
     }
 
   function isArray(value) {
@@ -159,47 +165,49 @@ var SGL = (function() {
 
 
   //
-  // @val@ is either a vertex array or array of vertex arrays.
-  // Function @flattenedArray@ returns an object of the form { array: ..., offsets: ...}
+  // Function 'flattenedArray' takes either an array or an array of arrays.
+  // It returns a flattened array and an index array. The index array
+  // contains offsets that represent vertex indexes.
+  // 'offset' refers to the vertex defined at 'array[itemSize*offset]'
   //
-  // Each offset object is of the form { offset:... , length:...}
-  // These values are used by gl.drawArrays to draw triangle strips.
+  // Invariant: Array should have at least 3 * itemSize elements.
+  // (3 = number of vertices in triangle)
+  // Invariant: Array should have multiple of itemSize elements.
   //
-  // For array [a0, a1, ..., an]
-  // we get [ { offset: 0,                   length: <a0.length/itemSize> },
-  //          { offset: <a0.length/itemSize, length: <a1.length/itemSize> },
-  //           ...,
-  //          { offset <(sum of a0.length .. a{n-1}.length) / itemSize,
-  //            length: <an.length/itemSize> }
-  //        ]
-  //
-  function flattenedArray(val, itemSize) {
-    var TRIANGLE_SIDES_MINUS_ONE = 2,
-        TRIANGLE_SIDES = 3;
-    var ai, i, a = [], index, offsets = [];
-    if (isArray(val)) {
 
+  function flattenedArray(val, itemSize) {
+    var TRIANGLE_SIDES_MINUS_ONE = 2;
+    var ai, i, a = [], offset, i_offset, as, s, indices = [];
+    if (isArray(val)) {
       if (val.length > 0 && isArray(val[0])) { // array of arrays
         as = val;
       } else { // flat array
         as = [val];
       }
 
-      for (index=0, ai=0; ai < as.length; ai++) {
+      for (s=0,i_offset=0,offset=0, ai = 0; ai < as.length; ai++) {
         if (as[ai].length % itemSize != 0) {
           return error(SGLError.arrayNotMutipleOfItemSize(as[ai].length, itemSize));
         }
-        for (i=0; i<as[ai].length; i++) {
-          a[index+i] = as[ai][i];
+        if (as[ai].length / itemSize < 3) {
+          return error(SGLError.lessThanThreeVertices(as[ai].length, itemSize));
+        }
+        for (i=0; i < as[ai].length; i++,offset++) { // copy array exactly
+          a[offset] = as[ai][i];
         }
 
-        offsets[ai] = { offset: index / itemSize , length: as[ai].length / itemSize };
-        index += as[ai].length
+        for ( i=0
+            ; i < as[ai].length / itemSize - TRIANGLE_SIDES_MINUS_ONE
+            ; i++,i_offset+=itemSize,s++) {
+          indices[i_offset]   = s;
+          indices[i_offset+1] = s+1;
+          indices[i_offset+2] = s+2;
+        }
+        s += TRIANGLE_SIDES_MINUS_ONE;
       }
     }
-    return({ array: new Float32Array(a), offsets: offsets});
+    return({ array: new Float32Array(a), indices: new Uint16Array(indices)});
   }
-
   //
   // Initialises canvas and sets the viewport width and height to be equal to the
   // width and height of the canvas DOM element.
@@ -279,7 +287,7 @@ var SGL = (function() {
   // Sets up a new buffer for GLSL attribute @attrName@
   //
   // @attrRec@ should contain at least the field @value@.
-  // This function adds fields "buffer", "location" and "offsets" to @attrRec@ object,
+  // This function adds fields "buffer", "location" and "index_buffer" to @attrRec@ object,
   // for use later in the @drawFromBufferToAttribute@ function.
   //
   function setUpAttributeBuffer(gl, shaderProgram, attrName, attrRec) {
@@ -295,7 +303,12 @@ var SGL = (function() {
     gl.bufferData(gl.ARRAY_BUFFER, obj.array, gl.STATIC_DRAW);
     gl.vertexAttribPointer(attrRec.location, attrRec.itemSize, gl.FLOAT, false, 0, 0);
 
-    attrRec.offsets = obj.offsets;
+    attrRec.index_buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, attrRec.index_buffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, obj.indices, gl.STATIC_DRAW);
+
+    attrRec.numIndices = obj.indices.length;
+
   }
 
   //
@@ -309,10 +322,10 @@ var SGL = (function() {
   // * @i@ is the index of the active attributes
   //
   function drawFromBufferToAttribute(gl, shaderProgram, attributes, i) {
-    var i, attrRec, attrInfo;
-    attrInfo = gl.getActiveAttrib(shaderProgram, i);
+    var attrInfo = gl.getActiveAttrib(shaderProgram, i),
+        attrRec = attributes[attrInfo.name],
+        maxAttrItemSize;
     if (attributes[attrInfo.name]) {
-      attrRec = attributes[attrInfo.name];
       gl.bindBuffer(gl.ARRAY_BUFFER, attrRec.buffer);
       maxAttrItemSize = maxItemSize(gl, attrInfo.type)
       if (attrRec.itemSize <= 0) { return error(SGLError.itemSizeZero); }
@@ -321,14 +334,8 @@ var SGL = (function() {
                      typeToString(gl, attrInfo.type) + " " + attrInfo.name));
       }
 
-      //
-      // FIXME: This is not that efficient. See if there is a way to use gl.drawElements to
-      // make this work.
-      //
-      for (i=0; i < attrRec.offsets.length; i++) {
-        gl.drawArrays(gl.TRIANGLE_STRIP, attrRec.offsets[i].offset,
-                      attrRec.offsets[i].length);
-      }
+      gl.vertexAttribPointer(attrRec.location, attrRec.itemSize, gl.FLOAT, false, 0, 0);
+      gl.drawElements(gl.TRIANGLE_STRIP, attrRec.numIndices, gl.UNSIGNED_SHORT,0);
     }
   }
 

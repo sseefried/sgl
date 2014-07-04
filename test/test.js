@@ -2,6 +2,7 @@
 // - jQuery
 // - glMatrix
 
+
 function webGLStart() {
   var canvas = $('#canvas'),
 
@@ -63,14 +64,25 @@ function webGLStart() {
     return;
   }
 
-  uniforms = { pMatrix: pMatrix, mvMatrix: mvMatrix };
-
   var drawSceneWrapper = function(uniforms) {
     var mbErr;
     mbErr = sglContext.drawScene(uniforms);
     if (SGL.isError(mbErr)) { alert(mbErr.msg); }
   }
 
-  drawSceneWrapper(uniforms);
-  SGL.cleanUp(sglContext);
+  var step = function(time) {
+    mat4.rotate(mvMatrix, 0.02, [0,1,0]); // spin on on two axis at different rates.
+    mat4.rotate(mvMatrix, -0.03, [-1,0,1]);
+    uniforms = { pMatrix: pMatrix, mvMatrix: mvMatrix };
+    drawSceneWrapper(uniforms);
+    if (true) {
+      requestAnimationFrame(step);
+    } else {
+      SGL.cleanUp(sglContext);
+    }
+  }
+
+  requestAnimationFrame(step);
+
+
 }
